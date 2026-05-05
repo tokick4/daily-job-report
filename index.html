@@ -87,15 +87,7 @@
                         <textarea id="issues" rows="3" placeholder="Describe any issues encountered today..."></textarea>
                     </div>
                     
-                    <div class="form-group">
-                        <label for="grading">Grading / Status</label>
-                        <select id="grading">
-                            <option value="Excellent">Excellent</option>
-                            <option value="Good" selected>Good</option>
-                            <option value="Fair">Fair</option>
-                            <option value="Poor">Poor</option>
-                        </select>
-                    </div>
+
 
                     <div class="form-group">
                         <label for="notes">General Notes</label>
@@ -149,7 +141,13 @@
         <div class="photo-item">
             <button type="button" class="btn-remove-photo">&times;</button>
             <img src="" alt="Job photo" class="preview-img">
-            <textarea placeholder="Photo details..." class="photo-details" rows="2"></textarea>
+            <select class="photo-grading" style="border: none; border-top: 1px solid var(--border); border-radius: 0; padding: 0.75rem; background: var(--bg-surface); width: 100%; border-bottom: 1px solid var(--border);">
+                <option value="Excellent">Excellent</option>
+                <option value="Good" selected>Good</option>
+                <option value="Fair">Fair</option>
+                <option value="Poor">Poor</option>
+            </select>
+            <textarea placeholder="Photo details..." class="photo-details" rows="2" style="border-top: none;"></textarea>
         </div>
     </template>
 

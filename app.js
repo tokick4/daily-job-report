@@ -167,7 +167,6 @@ function loadReportIntoForm(report) {
     document.getElementById('address').value = report.address || '';
     document.getElementById('gps-coords').value = report.gps || '';
     document.getElementById('issues').value = report.issues || '';
-    document.getElementById('grading').value = report.grading || 'Good';
     document.getElementById('notes').value = report.notes || '';
     
     photos = report.photos || [];
@@ -237,7 +236,7 @@ function handlePhotoUpload(event) {
     // Process each file (resize and convert to base64)
     Promise.all(files.map(processImage)).then(processedImages => {
         processedImages.forEach(imgData => {
-            photos.push({ id: Date.now() + Math.random(), base64: imgData, details: '' });
+            photos.push({ id: Date.now() + Math.random(), base64: imgData, details: '', grading: 'Good' });
         });
         renderPhotos();
         hideLoading();
@@ -288,10 +287,18 @@ function renderPhotos() {
         const item = clone.querySelector('.photo-item');
         const img = clone.querySelector('img');
         const textarea = clone.querySelector('textarea');
+        const gradingSelect = clone.querySelector('.photo-grading');
         const removeBtn = clone.querySelector('.btn-remove-photo');
 
         img.src = photo.base64;
-        textarea.value = photo.details;
+        textarea.value = photo.details || '';
+        
+        if (gradingSelect) {
+            gradingSelect.value = photo.grading || 'Good';
+            gradingSelect.addEventListener('change', (e) => {
+                photos[index].grading = e.target.value;
+            });
+        }
 
         textarea.addEventListener('input', (e) => {
             photos[index].details = e.target.value;
@@ -316,7 +323,6 @@ function getFormData() {
         address: document.getElementById('address').value,
         gps: document.getElementById('gps-coords').value,
         issues: document.getElementById('issues').value,
-        grading: document.getElementById('grading').value,
         notes: document.getElementById('notes').value,
         photos: photos // Array of {base64, details}
     };
@@ -364,7 +370,6 @@ async function generatePDF() {
             addRow("Date", data.date);
             addRow("Address", data.address);
             addRow("GPS", data.gps);
-            addRow("Grading", data.grading);
 
             startY += 0.2;
             doc.setFont("helvetica", "bold");
@@ -411,17 +416,33 @@ async function generatePDF() {
                     const photo = photos[i];
 
                     // Add Image
+                    let renderedImgH = imgH;
                     try {
-                        doc.addImage(photo.base64, 'JPEG', x, y, colW, imgH, undefined, 'FAST');
+                        const props = doc.getImageProperties(photo.base64);
+                        const ratio = props.width / props.height;
+                        let renderW = colW;
+                        let renderH = colW / ratio;
+                        
+                        if (renderH > imgH) {
+                            renderH = imgH;
+                            renderW = imgH * ratio;
+                        }
+                        
+                        // Center image horizontally within the column if needed
+                        const offsetX = (colW - renderW) / 2;
+                        renderedImgH = renderH;
+                        
+                        doc.addImage(photo.base64, 'JPEG', x + offsetX, y, renderW, renderH, undefined, 'FAST');
                     } catch (e) {
                         console.error("Error adding image to PDF", e);
                     }
 
                     // Add Details
                     doc.setFontSize(10);
-                    const detailsLines = doc.splitTextToSize(photo.details || 'No details provided.', colW);
+                    const detailsText = `Grade: ${photo.grading || 'Good'}\n${photo.details || 'No details provided.'}`;
+                    const detailsLines = doc.splitTextToSize(detailsText, colW);
                     // clip lines to max 4 to fit in the 1 inch space
-                    doc.text(detailsLines.slice(0, 4), x, y + imgH + 0.15);
+                    doc.text(detailsLines.slice(0, 4), x, y + renderedImgH + 0.15);
                 }
             }
 
