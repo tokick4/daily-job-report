@@ -1,4 +1,4 @@
-const CACHE_NAME = 'job-report-v1';
+const CACHE_NAME = 'job-report-v2';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',

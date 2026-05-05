@@ -103,8 +103,8 @@ main {
     animation: fadeIn 0.3s ease-out;
 }
 
-.view.hidden {
-    display: none;
+.hidden {
+    display: none !important;
 }
 
 @keyframes fadeIn {
