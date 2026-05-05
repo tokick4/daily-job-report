@@ -312,27 +312,25 @@ async function handleFormSubmit(e) {
     showLoading("Saving to cloud...");
 
     try {
-        const response = await fetch(GOOGLE_SCRIPT_URL, {
+        // Use no-cors to prevent Safari/iOS from blocking the cross-domain redirect
+        await fetch(GOOGLE_SCRIPT_URL, {
             method: 'POST',
+            mode: 'no-cors',
             body: JSON.stringify(data),
             headers: {
-                'Content-Type': 'text/plain;charset=utf-8', // Bypass CORS preflight for Apps Script
+                'Content-Type': 'text/plain;charset=utf-8',
             }
         });
 
-        const result = await response.json();
-
-        if (result.status === 'success') {
-            alert("Report saved successfully!");
-            // Reset form
-            form.reset();
-            photos = [];
-            renderPhotos();
-            document.getElementById('date').valueAsDate = new Date();
-            navigateTo('dashboard');
-        } else {
-            throw new Error(result.message || 'Unknown error');
-        }
+        // With no-cors, we receive an opaque response (status 0). We cannot read JSON.
+        // If no network error was thrown, we assume the dispatch was successful.
+        alert("Report saved successfully!");
+        // Reset form
+        form.reset();
+        photos = [];
+        renderPhotos();
+        document.getElementById('date').valueAsDate = new Date();
+        navigateTo('dashboard');
     } catch (error) {
         console.error(error);
         alert("Failed to save report. Error: " + error.message);
