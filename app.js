@@ -8,6 +8,7 @@ const btns = {
     newReport: document.getElementById('btn-new-report'),
     getLocation: document.getElementById('btn-get-location'),
     generatePdf: document.getElementById('btn-generate-pdf'),
+    saveDraft: document.getElementById('btn-save-draft'),
     save: document.getElementById('btn-save')
 };
 const headerTitle = document.getElementById('header-title');
@@ -25,21 +26,154 @@ const photoTemplate = document.getElementById('photo-item-template');
 let photos = [];
 const MAX_PHOTOS = 24;
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz-A8GxA_QzsUptm-HfcgJHrLAPP0oSOVG3NrgAmvaOYszw__06oMRzhMDJG9ZCPprSrg/exec'; // User needs to set this
+let currentReportId = null;
+
+// Database (IndexedDB) wrapper
+const DB_NAME = 'DailyJobReportsDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'reports';
+let db;
+
+function initDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onerror = (e) => reject("IndexedDB error: " + e.target.error);
+        request.onsuccess = (e) => {
+            db = e.target.result;
+            resolve(db);
+        };
+        request.onupgradeneeded = (e) => {
+            db = e.target.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+                db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+            }
+        };
+    });
+}
+
+function saveReportToDB(report) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.put(report);
+        request.onsuccess = () => resolve(report);
+        request.onerror = (e) => reject(e.target.error);
+    });
+}
+
+function getAllReportsFromDB() {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = (e) => reject(e.target.error);
+    });
+}
+
+function deleteReportFromDB(id) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.delete(id);
+        request.onsuccess = () => resolve();
+        request.onerror = (e) => reject(e.target.error);
+    });
+}
 
 // Initialization
-function init() {
+async function init() {
+    await initDB();
+
     // Navigation
-    btns.newReport.addEventListener('click', () => navigateTo('form'));
-    btns.back.addEventListener('click', () => navigateTo('dashboard'));
+    btns.newReport.addEventListener('click', () => {
+        currentReportId = Date.now().toString();
+        form.reset();
+        photos = [];
+        renderPhotos();
+        document.getElementById('date').valueAsDate = new Date();
+        navigateTo('form');
+    });
+    btns.back.addEventListener('click', async () => {
+        await renderDashboard();
+        navigateTo('dashboard');
+    });
 
     // Form interactions
     btns.getLocation.addEventListener('click', fetchLocation);
     photoInput.addEventListener('change', handlePhotoUpload);
     btns.generatePdf.addEventListener('click', generatePDF);
+    btns.saveDraft.addEventListener('click', saveDraft);
     form.addEventListener('submit', handleFormSubmit);
 
-    // Set today's date by default
-    document.getElementById('date').valueAsDate = new Date();
+    // Initial load
+    await renderDashboard();
+}
+
+async function renderDashboard() {
+    const reportsList = document.getElementById('reports-list');
+    const emptyState = document.querySelector('.empty-state');
+    reportsList.innerHTML = '';
+    
+    try {
+        const reports = await getAllReportsFromDB();
+        
+        if (reports.length === 0) {
+            emptyState.classList.remove('hidden');
+        } else {
+            emptyState.classList.add('hidden');
+            
+            reports.sort((a, b) => b.id - a.id).forEach(report => {
+                const card = document.createElement('div');
+                card.className = 'card report-card';
+                card.innerHTML = `
+                    <div class="report-card-header">
+                        <h4>${report.project || 'Untitled Project'}</h4>
+                        <span class="badge ${report.status === 'submitted' ? 'badge-success' : 'badge-warning'}">${report.status === 'submitted' ? 'Submitted' : 'Draft'}</span>
+                    </div>
+                    <div class="report-card-body">
+                        <p><strong>Date:</strong> ${report.date || 'N/A'}</p>
+                        <p><strong>Client:</strong> ${report.client || 'N/A'}</p>
+                    </div>
+                    <div class="report-card-actions">
+                        <button class="btn-outline btn-sm edit-report-btn">Edit</button>
+                        <button class="btn-outline btn-sm delete-report-btn" style="color: var(--danger); border-color: var(--danger);">Delete</button>
+                    </div>
+                `;
+                
+                card.querySelector('.edit-report-btn').addEventListener('click', () => loadReportIntoForm(report));
+                card.querySelector('.delete-report-btn').addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if (confirm("Are you sure you want to delete this report locally?")) {
+                        await deleteReportFromDB(report.id);
+                        await renderDashboard();
+                    }
+                });
+                
+                reportsList.appendChild(card);
+            });
+        }
+    } catch (e) {
+        console.error("Failed to load reports", e);
+    }
+}
+
+function loadReportIntoForm(report) {
+    currentReportId = report.id;
+    
+    document.getElementById('project-name').value = report.project || '';
+    document.getElementById('client-name').value = report.client || '';
+    document.getElementById('date').value = report.date || '';
+    document.getElementById('address').value = report.address || '';
+    document.getElementById('gps-coords').value = report.gps || '';
+    document.getElementById('issues').value = report.issues || '';
+    document.getElementById('grading').value = report.grading || 'Good';
+    document.getElementById('notes').value = report.notes || '';
+    
+    photos = report.photos || [];
+    renderPhotos();
+    
+    navigateTo('form');
 }
 
 // Navigation
@@ -175,6 +309,7 @@ function renderPhotos() {
 // Data Collection
 function getFormData() {
     return {
+        id: currentReportId || Date.now().toString(),
         project: document.getElementById('project-name').value,
         client: document.getElementById('client-name').value,
         date: document.getElementById('date').value,
@@ -300,6 +435,31 @@ async function generatePDF() {
     }, 100);
 }
 
+// Local Saving
+async function saveDraft() {
+    const project = document.getElementById('project-name').value;
+    if (!project) {
+        alert("Please enter a Project Name before saving a draft.");
+        return;
+    }
+
+    const data = getFormData();
+    data.status = 'draft';
+    showLoading("Saving draft...");
+    
+    try {
+        await saveReportToDB(data);
+        alert("Draft saved!");
+        await renderDashboard();
+        navigateTo('dashboard');
+    } catch (error) {
+        console.error(error);
+        alert("Failed to save draft.");
+    } finally {
+        hideLoading();
+    }
+}
+
 // Submission
 async function handleFormSubmit(e) {
     e.preventDefault();
@@ -309,6 +469,8 @@ async function handleFormSubmit(e) {
     }
 
     const data = getFormData();
+    data.status = 'submitted'; // Mark as submitted
+
     showLoading("Saving to cloud...");
 
     try {
@@ -324,12 +486,11 @@ async function handleFormSubmit(e) {
 
         // With no-cors, we receive an opaque response (status 0). We cannot read JSON.
         // If no network error was thrown, we assume the dispatch was successful.
+        await saveReportToDB(data);
+        
         alert("Report saved successfully!");
-        // Reset form
-        form.reset();
-        photos = [];
-        renderPhotos();
-        document.getElementById('date').valueAsDate = new Date();
+        
+        await renderDashboard();
         navigateTo('dashboard');
     } catch (error) {
         console.error(error);

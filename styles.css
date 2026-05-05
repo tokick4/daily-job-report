@@ -344,3 +344,73 @@ textarea:focus {
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
+
+/* Reports Dashboard Grid */
+.reports-grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    margin-bottom: var(--sp-8);
+}
+
+.report-card {
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    padding: var(--sp-4);
+}
+
+.report-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.report-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--sp-2);
+}
+
+.report-card-header h4 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge-success {
+    background-color: #d1fae5;
+    color: #065f46;
+}
+
+.badge-warning {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+.report-card-body {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-bottom: var(--sp-4);
+}
+
+.report-card-body p {
+    margin-bottom: 0.25rem;
+}
+
+.report-card-actions {
+    display: flex;
+    gap: var(--sp-2);
+}
+
+.btn-sm {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+}
