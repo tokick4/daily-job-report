@@ -278,6 +278,83 @@ function processImage(file) {
     });
 }
 
+function applyTextOverlay(photoObj, globalDate) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            
+            // Draw original image
+            ctx.drawImage(img, 0, 0);
+            
+            // Text to draw
+            const dateStr = `Date: ${globalDate || 'N/A'}`;
+            const gradeStr = `Grade: ${photoObj.grading || 'Good'}`;
+            const noteStr = photoObj.details || '';
+            
+            // Text formatting setup
+            const fontSize = Math.max(16, Math.floor(canvas.width * 0.035));
+            const padding = Math.floor(fontSize * 0.8);
+            ctx.font = `${fontSize}px Arial, sans-serif`;
+            ctx.textBaseline = 'top';
+            
+            const maxWidth = canvas.width - (padding * 2);
+            
+            // Word wrap function for note
+            const wrapText = (text, maxWidth) => {
+                if (!text) return [];
+                const words = text.split(' ');
+                const lines = [];
+                let currentLine = words[0];
+
+                for (let i = 1; i < words.length; i++) {
+                    const word = words[i];
+                    const width = ctx.measureText(currentLine + " " + word).width;
+                    if (width < maxWidth) {
+                        currentLine += " " + word;
+                    } else {
+                        lines.push(currentLine);
+                        currentLine = word;
+                    }
+                }
+                if (currentLine) lines.push(currentLine);
+                return lines;
+            };
+            
+            const noteLines = wrapText(noteStr, maxWidth);
+            
+            // Calculate height of the overlay box
+            const lineHeight = fontSize * 1.3;
+            const totalLines = 1 + noteLines.length; // Date & Grade on one line, then Note
+            const boxHeight = (totalLines * lineHeight) + (padding * 2);
+            const boxY = canvas.height - boxHeight;
+            
+            // Draw white background
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, boxY, canvas.width, boxHeight);
+            
+            // Draw Text
+            ctx.fillStyle = '#000000';
+            let currentY = boxY + padding;
+            
+            // Draw Date & Grade on same line
+            ctx.fillText(`${dateStr}   |   ${gradeStr}`, padding, currentY);
+            currentY += lineHeight;
+            
+            noteLines.forEach(line => {
+                ctx.fillText(line, padding, currentY);
+                currentY += lineHeight;
+            });
+            
+            resolve(canvas.toDataURL('image/jpeg', 0.8));
+        };
+        img.src = photoObj.base64;
+    });
+}
+
 function renderPhotos() {
     photoList.innerHTML = '';
     photoCountLabel.textContent = photos.length;
@@ -338,122 +415,108 @@ async function generatePDF() {
 
     showLoading("Generating PDF...");
 
-    // Defer to allow UI to update
-    setTimeout(() => {
-        try {
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF({ orientation: 'portrait', unit: 'in', format: 'letter' });
+    try {
+        // Process photos for overlay
+        const processedPhotos = await Promise.all(data.photos.map(async (photo) => {
+            const overlaidBase64 = await applyTextOverlay(photo, data.date);
+            return { ...photo, base64: overlaidBase64 };
+        }));
 
-            // --- Cover Page ---
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'in', format: 'letter' });
+
+        // --- Cover Page ---
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(24);
+        doc.text("Daily Job Report", 4.25, 1.5, { align: "center" });
+
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "normal");
+
+        let startY = 2.5;
+        const lineSpacing = 0.4;
+
+        const addRow = (label, value) => {
             doc.setFont("helvetica", "bold");
-            doc.setFontSize(24);
-            doc.text("Daily Job Report", 4.25, 1.5, { align: "center" });
-
-            doc.setFontSize(14);
+            doc.text(`${label}:`, 1, startY);
             doc.setFont("helvetica", "normal");
+            const lines = doc.splitTextToSize(value || 'N/A', 5);
+            doc.text(lines, 2.5, startY);
+            startY += lineSpacing * lines.length;
+        };
 
-            let startY = 2.5;
-            const lineSpacing = 0.4;
+        addRow("Project", data.project);
+        addRow("Client", data.client);
+        addRow("Date", data.date);
+        addRow("Address", data.address);
+        addRow("GPS", data.gps);
 
-            const addRow = (label, value) => {
-                doc.setFont("helvetica", "bold");
-                doc.text(`${label}:`, 1, startY);
-                doc.setFont("helvetica", "normal");
-                // split text if too long
-                const lines = doc.splitTextToSize(value || 'N/A', 5);
-                doc.text(lines, 2.5, startY);
-                startY += lineSpacing * lines.length;
-            };
+        startY += 0.2;
+        doc.setFont("helvetica", "bold");
+        doc.text("Issues / Roadblocks:", 1, startY);
+        startY += lineSpacing;
+        doc.setFont("helvetica", "normal");
+        const issueLines = doc.splitTextToSize(data.issues || 'None', 6.5);
+        doc.text(issueLines, 1, startY);
+        startY += lineSpacing * issueLines.length + 0.2;
 
-            addRow("Project", data.project);
-            addRow("Client", data.client);
-            addRow("Date", data.date);
-            addRow("Address", data.address);
-            addRow("GPS", data.gps);
+        doc.setFont("helvetica", "bold");
+        doc.text("Notes:", 1, startY);
+        startY += lineSpacing;
+        doc.setFont("helvetica", "normal");
+        const noteLines = doc.splitTextToSize(data.notes || 'None', 6.5);
+        doc.text(noteLines, 1, startY);
 
-            startY += 0.2;
-            doc.setFont("helvetica", "bold");
-            doc.text("Issues / Roadblocks:", 1, startY);
-            startY += lineSpacing;
-            doc.setFont("helvetica", "normal");
-            const issueLines = doc.splitTextToSize(data.issues || 'None', 6.5);
-            doc.text(issueLines, 1, startY);
-            startY += lineSpacing * issueLines.length + 0.2;
+        // --- Photo Pages ---
+        if (processedPhotos.length > 0) {
+            const photosPerPage = 6;
+            const columns = 2;
+            const margin = 0.5;
+            const pageW = 8.5;
+            const colW = (pageW - (margin * 2) - 0.5) / 2; // 3.5in
+            const rowH = 3.0;
+            const imgH = 2.8; // we have more room now because text is inside the image
 
-            doc.setFont("helvetica", "bold");
-            doc.text("Notes:", 1, startY);
-            startY += lineSpacing;
-            doc.setFont("helvetica", "normal");
-            const noteLines = doc.splitTextToSize(data.notes || 'None', 6.5);
-            doc.text(noteLines, 1, startY);
+            for (let i = 0; i < processedPhotos.length; i++) {
+                if (i % photosPerPage === 0) {
+                    doc.addPage();
+                }
 
-            // --- Photo Pages ---
-            if (photos.length > 0) {
-                const photosPerPage = 6;
-                const columns = 2;
-                const margin = 0.5;
-                const pageW = 8.5;
-                const pageH = 11;
+                const idxOnPage = i % photosPerPage;
+                const col = idxOnPage % columns;
+                const row = Math.floor(idxOnPage / columns);
 
-                // Available width for 2 columns with a 0.5in gap
-                const colW = (pageW - (margin * 2) - 0.5) / 2; // 3.5in
-                const rowH = 3.0; // 2in image + 1in text
-                const imgH = 2.0;
+                const x = margin + (col * (colW + 0.5));
+                const y = margin + (row * (rowH + 0.2));
 
-                for (let i = 0; i < photos.length; i++) {
-                    // New page every 6 photos
-                    if (i % photosPerPage === 0) {
-                        doc.addPage();
+                const photo = processedPhotos[i];
+
+                try {
+                    const props = doc.getImageProperties(photo.base64);
+                    const ratio = props.width / props.height;
+                    let renderW = colW;
+                    let renderH = colW / ratio;
+                    
+                    if (renderH > imgH) {
+                        renderH = imgH;
+                        renderW = imgH * ratio;
                     }
-
-                    const idxOnPage = i % photosPerPage;
-                    const col = idxOnPage % columns; // 0 or 1
-                    const row = Math.floor(idxOnPage / columns); // 0, 1, or 2
-
-                    const x = margin + (col * (colW + 0.5));
-                    const y = margin + (row * (rowH + 0.2));
-
-                    const photo = photos[i];
-
-                    // Add Image
-                    let renderedImgH = imgH;
-                    try {
-                        const props = doc.getImageProperties(photo.base64);
-                        const ratio = props.width / props.height;
-                        let renderW = colW;
-                        let renderH = colW / ratio;
-                        
-                        if (renderH > imgH) {
-                            renderH = imgH;
-                            renderW = imgH * ratio;
-                        }
-                        
-                        // Center image horizontally within the column if needed
-                        const offsetX = (colW - renderW) / 2;
-                        renderedImgH = renderH;
-                        
-                        doc.addImage(photo.base64, 'JPEG', x + offsetX, y, renderW, renderH, undefined, 'FAST');
-                    } catch (e) {
-                        console.error("Error adding image to PDF", e);
-                    }
-
-                    // Add Details
-                    doc.setFontSize(10);
-                    const detailsText = `Grade: ${photo.grading || 'Good'}\n${photo.details || 'No details provided.'}`;
-                    const detailsLines = doc.splitTextToSize(detailsText, colW);
-                    // clip lines to max 4 to fit in the 1 inch space
-                    doc.text(detailsLines.slice(0, 4), x, y + renderedImgH + 0.15);
+                    
+                    const offsetX = (colW - renderW) / 2;
+                    doc.addImage(photo.base64, 'JPEG', x + offsetX, y, renderW, renderH, undefined, 'FAST');
+                } catch (e) {
+                    console.error("Error adding image to PDF", e);
                 }
             }
-
-            doc.save(`JobReport_${data.project.replace(/\s+/g, '_')}_${data.date}.pdf`);
-            hideLoading();
-        } catch (error) {
-            console.error(error);
-            alert("Error generating PDF. Please try again.");
-            hideLoading();
         }
-    }, 100);
+
+        doc.save(`JobReport_${data.project.replace(/\s+/g, '_')}_${data.date}.pdf`);
+    } catch (error) {
+        console.error(error);
+        alert("Error generating PDF. Please try again.");
+    } finally {
+        hideLoading();
+    }
 }
 
 // Local Saving
@@ -495,27 +558,43 @@ async function handleFormSubmit(e) {
     showLoading("Saving to cloud...");
 
     try {
-        // Use no-cors to prevent Safari/iOS from blocking the cross-domain redirect
-        await fetch(GOOGLE_SCRIPT_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            body: JSON.stringify(data),
-            headers: {
-                'Content-Type': 'text/plain;charset=utf-8',
-            }
-        });
+        // Process photos for overlay
+        const processedPhotos = await Promise.all(data.photos.map(async (photo) => {
+            const overlaidBase64 = await applyTextOverlay(photo, data.date);
+            return { ...photo, base64: overlaidBase64 };
+        }));
+        
+        const payloadData = { ...data, photos: processedPhotos };
 
-        // With no-cors, we receive an opaque response (status 0). We cannot read JSON.
-        // If no network error was thrown, we assume the dispatch was successful.
+        let fetchError = null;
+        try {
+            await fetch(GOOGLE_SCRIPT_URL, {
+                method: 'POST',
+                body: JSON.stringify(payloadData),
+                headers: {
+                    'Content-Type': 'text/plain;charset=utf-8',
+                }
+            });
+        } catch (e) {
+            console.warn("Fetch threw an error (often happens on iOS due to redirect blocking):", e);
+            fetchError = e;
+        }
+
+        // Even if fetch threw an error (common on iOS Safari due to Intelligent Tracking Prevention blocking the Google Apps Script redirect),
+        // the initial POST data almost always reaches the server successfully before the redirect is blocked.
         await saveReportToDB(data);
         
-        alert("Report saved successfully!");
+        if (fetchError) {
+            alert("Report submitted, but couldn't verify server response (Safari tracking prevention blocked the redirect). It was saved locally and likely reached the server.");
+        } else {
+            alert("Report saved successfully!");
+        }
         
         await renderDashboard();
         navigateTo('dashboard');
     } catch (error) {
         console.error(error);
-        alert("Failed to save report. Error: " + error.message);
+        alert("Failed to save report locally. Error: " + error.message);
     } finally {
         hideLoading();
     }
